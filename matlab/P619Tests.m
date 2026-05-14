@@ -397,6 +397,28 @@ classdef P619Tests < matlab.unittest.TestCase
         function p835_high_latitude_winter_reference_validation(testCase)
             testCase.p835_profile_validation_helper('p835_high_latitude_winter_reference.csv', 42);
         end
+
+        function atm_gaseous_attenuation_validation(testCase)
+            % Test: atm_gaseous_attenuation_validation
+            % Validates atm_gaseous_attenuation() against known values.
+
+            absTol = 1e-6;
+
+            cases = [ ...
+                struct('fGHz', 28, 'e2sflag', true, 'He', 0.0, 'Hs', 35786.0, 'phi_e', 30.0, 'phi_s', 82.4772, 'Dphi', 3, 'atm_type', 1, 'exp_Ag', 0.47081173           ), ...
+                struct('fGHz', 28, 'e2sflag', true, 'He', 1.3, 'Hs', 8.0,     'phi_e', 30.0, 'phi_s', 30.0897, 'Dphi', 3, 'atm_type', 1, 'exp_Ag', 0.243762112362186    ), ...
+                struct('fGHz', 28, 'e2sflag', true, 'He', 1.3, 'Hs', 100.0,   'phi_e', 30.0, 'phi_s', 31.4560, 'Dphi', 3, 'atm_type', 1, 'exp_Ag', 0.277441106045681    ), ...
+                struct('fGHz', 28, 'e2sflag', true, 'He', 0.0, 'Hs', 35786.0, 'phi_e', 90.0, 'phi_s', 90.0,    'Dphi', 3, 'atm_type', 1, 'exp_Ag', 0.23565561185908993    ), ...
+            ];
+
+            for k = 1:numel(cases)
+                c = cases(k);
+                Ag  = testCase.ITURP619.atm_gaseous_attenuation(c.fGHz, c.e2sflag, c.He, c.Hs, c.phi_e, c.phi_s, c.Dphi, c.atm_type);
+                msg = sprintf('Case %d: fGHz=%.6g, e2sflag=%d, He=%.6g km, Hs=%.6g km, phi_e=%.6g deg, phi_s=%.6g deg, Dphi=%.6g deg, atm_type=%d', ...
+                    k, c.fGHz, c.e2sflag, c.He, c.Hs, c.phi_e, c.phi_s, c.Dphi, c.atm_type);
+                testCase.verifyEqual(Ag, c.exp_Ag, 'AbsTol', absTol, msg);
+            end
+        end
     end
 
     methods (Access = private)

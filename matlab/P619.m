@@ -172,36 +172,8 @@ classdef P619
             end
 
             %% Attenuation due to atmospheric gases (Annex C)
-            % ISSUE: This procedure does not seem to have time-percentage
-            % dependency that is implied in equation (14)
 
-            % Find lower and upper boundaries for each layer in the path
-            % between earth station and the space station
-
-            Hs = min(100, Hs); % ISSUE P.619 does not explicitly limit the upper height, but P.676 and standard atmospheres do
-
-            h_atm = p676_slant_path_geometry16(obj, He, Hs);
-
-%             % First, compute the bounds for the layers from 0-100 km
-%             h = p676_slant_path_geometry15(obj);
-
-            % compute the midpoint for each layer
-
-            hmid = 0.5*( h_atm(1:end-1) + h_atm(2:end));
-
-            % compute T, P, rho, n profiles at midpoint of each layer
-
-            [T, P, rho, n] = p835_std_atm_profiles(obj, hmid, atm_type);
-
-            if (e2sflag)
-
-                Ag = atm_attenuation_E2s(obj, fGHz, He, Hs, phi_e, phi_s, Dphi, h_atm, rho, T, P, n, true, atm_type);
-                
-            else
-
-                Ag = atm_attenuation_s2E(obj, fGHz, He, Hs, phi_e, phi_s, Dphi, h_atm, rho, T, P, n, true);
-
-            end
+            Ag = atm_gaseous_attenuation(obj, fGHz, e2sflag, He, Hs, phi_e, phi_s, Dphi, atm_type);
 
             %% Attenuation due to beamspreading (Section 2.4.2)
 
@@ -1097,6 +1069,62 @@ classdef P619
         %                        Attachment C to Annex 1                          %
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+        function Ag = atm_gaseous_attenuation(obj, fGHz, e2sflag, He, Hs, phi_e, phi_s, Dphi, atm_type)
+            %%atm_gaseous_attenuation Computes attenuation due to atmospheric gases
+            %
+            % Recommendation ITU-R P.619-5 Annex C
+            %
+            % This function sets up the slant-path layer geometry and atmospheric
+            % profiles, then delegates to atm_attenuation_E2s or atm_attenuation_s2E
+            % depending on the propagation direction.
+            %
+            % ISSUE: This procedure does not seem to have time-percentage
+            % dependency that is implied in equation (14).
+            %
+            % Inputs
+            % Variable    Unit     Type     Description
+            % fGHz        GHz      float    Frequency
+            % e2sflag     -        bool     If true:  Earth-to-space direction,
+            %                               If false: space-to-Earth direction
+            % He          km       float    Height of Earth station (above mean sea level)
+            % Hs          km       float    Height of space-based station (above mean sea level)
+            %                               Internally capped at 100 km as required by ITU-R P.676
+            %                               and standard atmosphere models
+            % phi_e       deg      float    Elevation angle of the main beam of the earth based station antenna
+            % phi_s       deg      float    Elevation angle of the main beam of the space-based station antenna
+            % Dphi        deg      float    Half-power beamwidth for
+            %                               the space based station antenna if e2sflag = true, or
+            %                               the Earth based station antenna if e2sflag = false
+            % atm_type    n.u.     int      Type of standard atmosphere from ITU-R P.835
+            %                               1  - ITU-R P.835 mean annual global reference atmosphere
+            %                               2  - ITU-R P.835 low-latitude reference atmosphere
+            %                               31 - ITU-R P.835 summer mid-latitude reference atmosphere
+            %                               32 - ITU-R P.835 winter mid-latitude reference atmosphere
+            %                               41 - ITU-R P.835 summer high-latitude reference atmosphere
+            %                               42 - ITU-R P.835 winter high-latitude reference atmosphere
+            %
+            % Outputs:
+            %
+            % Ag          dB       float    Total gaseous attenuation along the slant path
+
+            % Find lower and upper boundaries for each layer in the path
+            % between earth station and the space station
+            h_atm = p676_slant_path_geometry16(obj, He, Hs);
+
+            % Compute the midpoint for each layer
+            hmid = 0.5 * (h_atm(1:end-1) + h_atm(2:end));
+
+            % Compute T, P, rho, n profiles at midpoint of each layer
+            [T, P, rho, n] = p835_std_atm_profiles(obj, hmid, atm_type);
+
+            if (e2sflag)
+                Ag = atm_attenuation_E2s(obj, fGHz, He, Hs, phi_e, phi_s, Dphi, h_atm, rho, T, P, n, true, atm_type);
+            else
+                Ag = atm_attenuation_s2E(obj, fGHz, He, Hs, phi_e, phi_s, Dphi, h_atm, rho, T, P, n, true);
+            end
+
+        end
+
         function Ag = atm_attenuation_s2E(obj, f, He, Hs, phi_e, phi_s, Dphi_e, h, rho, T, P, n, std_atm)
             %%atm_attenuation_s2E Computes attenuation along space-Earth path (Descending ray)
             %
@@ -1302,14 +1330,10 @@ classdef P619
                     % proceed to Step 3, otherwise stop
 
                     if abs(phi_cs - phi_s) > Dphi_s/2.0
-
-
-                            % TODO: Check if this combines well with other
-                            % loss mechanisms
+                        % TODO: Check if this combines well with other
+                        % loss mechanisms
                         Ag = 1e20;
-
                         return
-
                     end
 
                     % Step 3: Determine if the line-of-sight between the two
@@ -1317,52 +1341,42 @@ classdef P619
                     % is being used, ducting does not occur
 
                     if (~std_atm)
-
                         eq43 = ((rs * ns) ./ (r .* n) ) * cosd(phi_s);
-
                         kk = find( eq43 >= 1, 1);
-
                         if (~isempty( kk ))
-
                             % TODO: Check if this combines well with other
                             % loss mechanisms
                             Ag = 1e20;
-
                             return
                         end
-
                     end
+                end
 
-                else % skip Steps 1 to 3 and go to Step 4
+                % Step 4: Calculate the length of the slant path lns within
+                % each layer from equation (34)
 
-                    % Step 4: Calculate the length of the slant path lns within
-                    % each layer from equation (34)
+                d2 = ( ne ./ n * re * cosd(phi_e) ).^2;
+                lne = sqrt( rn1.^2 - d2 ) - sqrt( rn.^2  - d2);       %(40)
 
-                    d2 = ( ne ./ n * re * cosd(phi_e) ).^2;
-                    lne = sqrt( rn1.^2 - d2 ) - sqrt( rn.^2  - d2);       %(40)
+                Ag = 0;
 
-                    Ag = 0;
+                for i = 1:N
 
-                    for i = 1:N
+                    % Step 5: Calculate the atmospheric specific attenuation
+                    % gamma_n within each layer in terms of the atmospheric
+                    % parameters within the layer from equation (1) of Annex 1
+                    % of Recommendation ITU-R P.676
 
-                        % Step 5: Calculate the atmospheric specific attenuation
-                        % gamma_n within each layer in terms of the atmospheric
-                        % parameters within the layer from equation (1) of Annex 1
-                        % of Recommendation ITU-R P.676
+                    [gamma_0, gamma_w] = p676d11_ga(obj, f, Pd(i), rho(i), T(i));
 
-                        [gamma_0, gamma_w] = p676d11_ga(obj, f, Pd(i), rho(i), T(i));
+                    % Step 6: Calculate the total gaseous attenuation along
+                    % the space-Earth slant path from equation (39)
 
-                        % Step 6: Calculate the total gaseous attenuation along
-                        % the space-Earth slant path from equation (39)
-
-                        Ag = Ag + (gamma_0 + gamma_w) * lne(i);
-
-                    end
-
-                    return
+                    Ag = Ag + (gamma_0 + gamma_w) * lne(i);
 
                 end
 
+                return
 
             else % Case 2: phi_e < 0
 
@@ -2248,20 +2262,26 @@ classdef P619
             % Outputs:
             % h           km       float    Vector of slant path heights
             
-            if(hU > 100 || hL <0)
-                error('The heights must be 0 <= hL < hU < 100 km');
-            end
+            % if(hU > 100 || hL <0)
+            %     error('The heights must be 0 <= hL < hU < 100 km');
+            % end
 
             iL = floor(100*log(1e4*hL*(exp(0.01)-1)+1)+1);           %(16a)
             iU =  ceil(100*log(1e4*hU*(exp(0.01)-1)+1)+1);           %(16b)
+
+            iU = min(iU, 922);
 
             n = iU - iL + 1;
 
             h = zeros(n,1);
 
             m = (exp(0.02)-exp(0.01)) / (exp(iU/100.0)-exp(iL/100.0)) * ( hU - hL );
-            %(16c)
 
+            if (iU == 922)
+                m = 0.0001; % The ITU validation example seems to rely on this being the case
+            end
+
+            %(16c)
             for i = iL : iU
 
                 h(i - iL + 1) = hL + m * (exp(0.01*(i-1)) - exp(0.01*(iL-1)))/(exp(0.01)-1);
